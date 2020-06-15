@@ -163,27 +163,28 @@ std::cout<<"test1"<<std::endl;
             Mat cutdepth_img(depthimage,Rect(x,y,W,H)); // W*Hpx四方で切り抜く
             siro=0,kaisu=0,P1=0,zero=0;
             std::mutex mut1;
-                    cut_img.forEach<unsigned char>([&](unsigned char &p, const int  position[]) -> void{
+                    cut_img.forEach<unsigned char>([&](unsigned char &p, const int  position[]) -> void{//pは画像の色素値
                         std::lock_guard<std::mutex> lock(mut1); //// ここ
-                        if(p>=200){siro=siro+1;} });//白を検出(200以上なら白)
+                        if(p>=200){siro=siro+1;} });//白を検出し個数を数える(200以上なら白)
                         Dmax=-100;Dmin=1000;depth=0;//初期値代入のため
                         std::mutex mut2; //ここ
-                    cutdepth_img.forEach<float>([&](float &p, const int  position[]) -> void{
+                    cutdepth_img.forEach<float>([&](float &p, const int  position[]) -> void{//pは画像のDepth値
                         std::lock_guard<std::mutex> lock(mut2);//ここ
                         kaisu=kaisu+1;P1=p/1000;
                         //Q[position[1]][position[0]]=p;
                         //if(kaisu==1){positionA=position[1];positionB=position[0];}
-                        if(Dmax<=(p/1000)){Dmax=p/1000;}
-                        if(Dmin>=(p/1000)){Dmin=p/1000;}
-                        if((p/1000)<=0.2){zero=zero+1;}
+                        if(Dmax<=(p/1000)){Dmax=p/1000;}//最大距離を求める  
+                        if(Dmin>=(p/1000)){Dmin=p/1000;}//最小距離を求める
+                        if((p/1000)<=0.2){zero=zero+1;}//測定不可能の値の個数を計算
                         depth=depth+p/1000;//ピクセル内の距離の合計
                         if(W*H-zero<=2){}
                         else{
                         if(kaisu==W*H){T[x][y]=(depth-(Dmax+Dmin))/(W*H-2-zero);}}//最大値と最小値を除いて平均化
+                        //T[x][y]は赤枠の距離データ
                         //std::cout <<"["<<position[1]<<"]["<<position[0]<<"]=P="<<P1<< std::endl;//printf
                         //std::cout <<"["<<position[1]<<"]["<<position[0]<<"]=P="<<cutdepth_img.at<float>(position[0],position[1])<< std::endl;//printf
                      });
-                     A[x][y]=(siro/(W*H))*100;//ピクセル内の白の割合
+                     A[x][y]=(siro/(W*H))*100;//赤枠内の白ピクセルの割合
                       }}
 
 
@@ -193,14 +194,15 @@ std::cout<<"test1"<<std::endl;
          
 		 if(A[x][y]>=10 && T[x][y]!=0){                                           //白の割合が10%以上なら発動
              rectangle(img_dst8,Rect(x,y,W,H),Scalar(0,0,255),1);//赤四角作成
-             pcl::PointXYZRGB jk;
+             //このx,yが赤枠の座標データ
+             pcl::PointXYZRGB jk;//構造体jkを定義(PCLにXYZ座標と色彩情報を転送)
 
-            //XYはimageのデータなのでpclにそのままもって行くとでかい そこである定数で割ることで食らうタリング座標に変換する-------------------------(1)
+            //XYはimageのデータなのでpclにそのままもって行くとでかい そこである定数で割ることでクラスタリング座標に変換する-------------------------(1)
              jk.x=(float)x/X_wariai;//ピクセル距離をクラスタリング距離に変換
              jk.y=(float)y/Y_wariai;
              jk.z=(float)T[x][y];//ZはDepthデータなのでそのままで行ける
 
-             pointCloud->points.emplace_back(jk);//ポイントクラウドに座標データを移動
+             pointCloud->points.emplace_back(jk);//ポイントクラウドにjk座標データを移動
              std::cout <<"B["<<x<<"]["<<y<<"]="<<pointCloud->points.back().z<<"_m"<< std::endl;
          }
      }}
@@ -240,7 +242,7 @@ std::cout<<"test1"<<std::endl;
         return pointCloud -> points[a].x > pointCloud -> points[b].x;//並び替えの条件
         });
     }
-        //ROS_INFO("なか ");//printと秒数表示
+    
     for (std::vector<pcl::PointIndices>::const_iterator it = indices.begin (); it != indices.end (); ++it){ 
         j=j+1; MAXPX=-10000,MINPX=10000,MAXPY=-10000,MINPY=10000;
         for (std::vector<int>::const_iterator pit = it->indices.begin (); pit != it->indices.end (); ++pit){ // グループ中の点にアクセスするループ(pit=グループ内の点番号)
@@ -327,7 +329,7 @@ std::cout<<"test1"<<std::endl;
     std::cout <<"center_X["<<j<<"]="<<centerx<< std::endl;
     std::cout <<"Right_X["<<j<<"]="<<MAXPX<< std::endl;
 
-    OpenCV1::waku waku;
+    OpenCV1::waku waku;//構造体wakuを定義
     waku.point_left.x = (MINPX-(RGBimage.size().width/2))/X_pcl;//送るデータ作成(大枠の右下と左下の座標)(pcl座標)
     waku.point_left.y = (MINPY-(RGBimage.size().height/2))/Y_pcl;//(pcl座標)
     waku.point_left.z = leftz;
@@ -341,16 +343,16 @@ std::cout<<"test1"<<std::endl;
     waku.point_centerright.x = (centerrightx-(RGBimage.size().width/2))/X_pcl;
     waku.point_centerright.z = centerrightz;
 
-    pclP.pclP.emplace_back(waku);//配列に送るデータを追加
+    pclP.pclP.emplace_back(waku);//配列に送るデータを追加(wakuデータ)
     }
     pclP.header.stamp = ros::Time::now();//トピックにパブリッシュした（データを送った
-    waku_pub.publish(pclP);
+    waku_pub.publish(pclP);//subに構造体pclPを転送
 
     sensor_msgs::PointCloud2 depth_pcl;
         pcl::toROSMsg (*pointCloud, depth_pcl);
         depth_pcl.header.stamp = ros::Time::now();
         depth_pcl.header.frame_id = rgb_msg->header.frame_id;
-        pub.publish(depth_pcl);
+        pub.publish(depth_pcl);//subに構造体depth_pclを転送
 
 	//処理結果表示もここで行うこともできる（別関数でもあり
     cv::imshow(win_src, RGBimage);
